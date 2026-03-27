@@ -65,16 +65,21 @@
 #define AOCL_ZSTD_OPT
 
 /* ZLIB */
-#define AOCL_ZLIB_OPT
-#ifdef AOCL_ZLIB_OPT
-     #define AOCL_ZLIB_SSE2_OPT
-     #ifdef AOCL_ZLIB_SSE2_OPT
-          #define AOCL_ZLIB_AVX_OPT
-          #ifdef AOCL_ZLIB_AVX_OPT
-               #define AOCL_ZLIB_AVX2_OPT
-               #ifdef AOCL_ZLIB_AVX2_OPT
-                    #define AOCL_ZLIB_AVX512_OPT
-               #endif /* AOCL_ZLIB_AVX2_OPT */
-          #endif /* AOCL_ZLIB_AVX_OPT */
-     #endif /* AOCL_ZLIB_SSE2_OPT */
-#endif /* AOCL_ZLIB_OPT */
+#if !defined(AOCL_ZLIB_REFERENCE_ONLY)
+    #ifndef AOCL_ZLIB_MAX_OPT_LEVEL
+        #define AOCL_ZLIB_MAX_OPT_LEVEL 4
+    #endif
+    #if AOCL_ZLIB_MAX_OPT_LEVEL > 0
+        #define AOCL_ZLIB_OPT
+        #define AOCL_ZLIB_SSE2_OPT
+        #if AOCL_ZLIB_MAX_OPT_LEVEL >= 2
+            #define AOCL_ZLIB_AVX_OPT
+        #endif /* AOCL_ZLIB_MAX_OPT_LEVEL >= 2 */
+        #if AOCL_ZLIB_MAX_OPT_LEVEL >= 3
+            #define AOCL_ZLIB_AVX2_OPT
+        #endif /* AOCL_ZLIB_MAX_OPT_LEVEL >= 3 */
+        #if AOCL_ZLIB_MAX_OPT_LEVEL >= 4
+            #define AOCL_ZLIB_AVX512_OPT
+        #endif /* AOCL_ZLIB_MAX_OPT_LEVEL >= 4 */
+    #endif /* AOCL_ZLIB_MAX_OPT_LEVEL > 0 */
+#endif

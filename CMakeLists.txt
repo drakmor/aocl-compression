@@ -87,6 +87,14 @@ option (AOCL_LZ4_EXTRA_HASH_TABLE_UPDATES "Enable storing of additional potentia
 option (AOCL_XZ_UTILS_LZMA_API_EXPERIMENTAL "Build with xz utils lzma APIs. Experimental feature with limited API support (Disabled by default)" OFF)
 option (AOCL_ENABLE_LOG_FEATURE "Enable logging support in library, for which log level is determined by environement variable AOCL_ENABLE_LOG (go through README.md) (Disabled by default)" OFF)
 option (AOCL_ENABLE_THREADS "Enable multi-threaded compression and decompression using SMP openMP threads (Disabled by default)" OFF)
+option (AOCL_ZLIB_REFERENCE_ONLY "Build AOCL zlib without AOCL x86 optimized code paths" OFF)
+option (AOCL_ZLIB_CONSOLE_SIMD "Enable a limited AOCL zlib SIMD build for console toolchains" OFF)
+set(AOCL_ZLIB_MAX_OPT_LEVEL "4" CACHE STRING "Maximum AOCL zlib optimization level: 0=C, 1=SSE2, 2=AVX, 3=AVX2, 4=AVX512")
+set_property(
+    CACHE AOCL_ZLIB_MAX_OPT_LEVEL
+    PROPERTY STRINGS
+    "0" "1" "2" "3" "4"
+)
 option (TEST_COVERAGE_THIRD_PARTY "Enable third party test bench based CTest suite (Disabled by default)" OFF)
 option (BUILD_UTILITY "Enable third party utility build: minigzip(zlib), zstd_utility(zstd) (Disabled by default)" OFF)
 option (NATIVE_ENABLE_THREADS "Enable native multi-threaded compression for supported methods (Disabled by default)" OFF)
@@ -163,6 +171,10 @@ endif()
 
 if (AOCL_EXCLUDE_BZIP2 AND AOCL_EXCLUDE_LZ4 AND AOCL_EXCLUDE_LZ4HC AND AOCL_EXCLUDE_LZMA AND AOCL_EXCLUDE_SNAPPY AND AOCL_EXCLUDE_ZLIB AND AOCL_EXCLUDE_ZSTD)
     message(FATAL_ERROR "All compression methods are excluded. Unable to build library.")
+endif()
+
+if (NOT AOCL_ZLIB_MAX_OPT_LEVEL MATCHES "^[0-4]$")
+    message(FATAL_ERROR "AOCL_ZLIB_MAX_OPT_LEVEL must be one of: 0, 1, 2, 3 or 4")
 endif()
 
 # setup to get source code coverage
@@ -306,14 +318,9 @@ endif ()
 if (NOT AOCL_EXCLUDE_ZLIB)
 set (ZLIB_SRC_FILES ${ALGOS_PATH}/zlib/code_alignment.c
                     ${ALGOS_PATH}/zlib/adler32.c
-                    ${ALGOS_PATH}/zlib/adler32_x86.c
                     ${ALGOS_PATH}/zlib/compress.c
                     ${ALGOS_PATH}/zlib/crc32.c
-                    ${ALGOS_PATH}/zlib/crc32_x86_pclmul.c
-                    ${ALGOS_PATH}/zlib/crc32_x86_vpclmulqdq.c
                     ${ALGOS_PATH}/zlib/deflate.c
-                    ${ALGOS_PATH}/zlib/deflate_medium.c
-                    ${ALGOS_PATH}/zlib/deflate_quick.c
                     ${ALGOS_PATH}/zlib/gzclose.c
                     ${ALGOS_PATH}/zlib/gzlib.c
                     ${ALGOS_PATH}/zlib/gzread.c
@@ -322,19 +329,38 @@ set (ZLIB_SRC_FILES ${ALGOS_PATH}/zlib/code_alignment.c
                     ${ALGOS_PATH}/zlib/inffast.c
                     ${ALGOS_PATH}/zlib/inflate.c
                     ${ALGOS_PATH}/zlib/inftrees.c
-                    ${ALGOS_PATH}/zlib/longest_match_x86.c
-                    ${ALGOS_PATH}/zlib/slide_hash_x86.c
                     ${ALGOS_PATH}/zlib/trees.c
                     ${ALGOS_PATH}/zlib/uncompr.c
                     ${ALGOS_PATH}/zlib/zutil.c
                     ${ALGOS_PATH}/zlib/zlib.h
                     ${ALGOS_PATH}/zlib/aocl_zlib_utils.c)
-set (ZLIBNG_SRC_FILES        ${ALGOS_PATH}/zlib/crc32_x86_vpclmulqdq.c
-                             ${ALGOS_PATH}/zlib/zlib-ng/arch/x86/chunkset_sse2.c
-                             ${ALGOS_PATH}/zlib/zlib-ng/arch/x86/chunkset_avx512.c)
-set_property(SOURCE ${ZLIBNG_SRC_FILES} APPEND PROPERTY INCLUDE_DIRECTORIES 
-                    "${CMAKE_SOURCE_DIR}/${ALGOS_PATH}/zlib/zlib-ng/;${CMAKE_SOURCE_DIR}/${ALGOS_PATH}/zlib/")
-set_property(SOURCE ${ZLIBNG_SRC_FILES} APPEND PROPERTY COMPILE_OPTIONS "-DHAVE_ATTRIBUTE_ALIGNED=1;-DHAVE_HIDDEN=1")
+set (ZLIB_OPT_SRC_FILES   ${ALGOS_PATH}/zlib/adler32_x86.c
+                          ${ALGOS_PATH}/zlib/crc32_x86_pclmul.c
+                          ${ALGOS_PATH}/zlib/deflate_medium.c
+                          ${ALGOS_PATH}/zlib/deflate_quick.c
+                          ${ALGOS_PATH}/zlib/longest_match_x86.c
+                          ${ALGOS_PATH}/zlib/slide_hash_x86.c)
+set (ZLIB_AVX512_SRC_FILES ${ALGOS_PATH}/zlib/crc32_x86_vpclmulqdq.c)
+set (ZLIBNG_SSE2_SRC_FILES ${ALGOS_PATH}/zlib/zlib-ng/arch/x86/chunkset_sse2.c)
+set (ZLIBNG_AVX512_SRC_FILES ${ALGOS_PATH}/zlib/zlib-ng/arch/x86/chunkset_avx512.c)
+if (AOCL_ZLIB_REFERENCE_ONLY)
+    add_compile_definitions(AOCL_ZLIB_REFERENCE_ONLY=1)
+    set(ZLIBNG_SRC_FILES)
+else ()
+    add_compile_definitions(AOCL_ZLIB_MAX_OPT_LEVEL=${AOCL_ZLIB_MAX_OPT_LEVEL})
+    set(ZLIB_SRC_FILES ${ZLIB_SRC_FILES}
+                       ${ZLIB_OPT_SRC_FILES})
+    set (ZLIBNG_SRC_FILES ${ZLIBNG_SSE2_SRC_FILES})
+    if (AOCL_ZLIB_MAX_OPT_LEVEL GREATER_EQUAL 4)
+        set(ZLIB_SRC_FILES ${ZLIB_SRC_FILES}
+                           ${ZLIB_AVX512_SRC_FILES})
+        set(ZLIBNG_SRC_FILES ${ZLIBNG_SRC_FILES}
+                             ${ZLIBNG_AVX512_SRC_FILES})
+    endif ()
+    set_property(SOURCE ${ZLIBNG_SRC_FILES} APPEND PROPERTY INCLUDE_DIRECTORIES
+                        "${CMAKE_SOURCE_DIR}/${ALGOS_PATH}/zlib/zlib-ng/;${CMAKE_SOURCE_DIR}/${ALGOS_PATH}/zlib/")
+    set_property(SOURCE ${ZLIBNG_SRC_FILES} APPEND PROPERTY COMPILE_OPTIONS "-DHAVE_ATTRIBUTE_ALIGNED=1;-DHAVE_HIDDEN=1")
+endif ()
 else ()
 set_property(SOURCE ${API_SRC_FILES} APPEND PROPERTY COMPILE_OPTIONS "-DAOCL_EXCLUDE_ZLIB")
 endif ()
@@ -384,8 +410,8 @@ set (UTILS_SRC_FILES	utils/code_alignment.cpp
 						utils/utils.cpp
 						utils/utils.h)
 # Source files utilizing AVX-512 and higher ISA extensions
-set (AVX512_SRC_FILES ${ALGOS_PATH}/zlib/crc32_x86_vpclmulqdq.c
-                      ${ALGOS_PATH}/zlib/zlib-ng/arch/x86/chunkset_avx512.c)
+set (AVX512_SRC_FILES ${ZLIB_AVX512_SRC_FILES}
+                      ${ZLIBNG_AVX512_SRC_FILES})
 
 if (AOCL_ENABLE_THREADS)
     set (THREADS_SRC_FILES threads/code_alignment.c
@@ -549,6 +575,26 @@ endif()
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffast-math")
     endif()
     set_source_files_properties(${SNAPPY_SRC_FILES} PROPERTIES COMPILE_OPTIONS "-DHAVE_ATTRIBUTE_ALWAYS_INLINE=1;-DHAVE_BUILTIN_CTZ=1;-DHAVE_BUILTIN_EXPECT=1;-DHAVE_BUILTIN_PREFETCH=1;-DSNAPPY_HAVE_X86_CRC32=1;")
+    if (AOCL_ZLIB_CONSOLE_SIMD AND NOT AOCL_EXCLUDE_ZLIB AND NOT AOCL_ZLIB_REFERENCE_ONLY)
+        set(AOCL_ZLIB_X86_AVX_FLAGS "-mavx")
+        if (AOCL_ZLIB_MAX_OPT_LEVEL GREATER_EQUAL 3)
+            list(APPEND AOCL_ZLIB_X86_AVX_FLAGS "-mavx2")
+        endif()
+
+        set_property(SOURCE ${ALGOS_PATH}/zlib/adler32_x86.c
+                     APPEND PROPERTY COMPILE_OPTIONS "-mssse3;${AOCL_ZLIB_X86_AVX_FLAGS}")
+        set_property(SOURCE ${ALGOS_PATH}/zlib/crc32_x86_pclmul.c
+                     APPEND PROPERTY COMPILE_OPTIONS "-mavx;-mpclmul")
+        set_property(SOURCE ${ALGOS_PATH}/zlib/deflate_quick.c
+                     ${ALGOS_PATH}/zlib/longest_match_x86.c
+                     APPEND PROPERTY COMPILE_OPTIONS "-msse4.2;${AOCL_ZLIB_X86_AVX_FLAGS}")
+        if (AOCL_ZLIB_MAX_OPT_LEVEL GREATER_EQUAL 3)
+            set_property(SOURCE ${ALGOS_PATH}/zlib/slide_hash_x86.c
+                         APPEND PROPERTY COMPILE_OPTIONS "-mavx2")
+        endif()
+        set_property(SOURCE ${ZLIBNG_SSE2_SRC_FILES}
+                     APPEND PROPERTY COMPILE_OPTIONS "-msse2")
+    endif()
 endif()
 
 include(CheckIncludeFile)

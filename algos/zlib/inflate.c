@@ -92,6 +92,9 @@
 #include "zlib-ng/zlib_ng_include.h"
 #else
 #include "inffast.h"
+#ifndef INFLATE_ADJUST_WINDOW_SIZE
+#define INFLATE_ADJUST_WINDOW_SIZE(n) (n)
+#endif
 #endif
 #include "aocl_zlib_x86.h"
 
